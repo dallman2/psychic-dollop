@@ -1,2 +1,2 @@
 # psychic-dollop
-The code for my github pages repo
+The code for my github pages repo.
