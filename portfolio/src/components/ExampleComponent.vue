@@ -13,20 +13,15 @@
 </template>
 
 <script lang="ts">
-import {
-  defineComponent,
-  PropType,
-  computed,
-  ref,
-  toRef,
-  Ref,
-} from 'vue';
+import { defineComponent, PropType, computed, ref, toRef, Ref } from 'vue';
 import { Todo, Meta } from './models';
+import * as tf from '@tensorflow/tfjs';
 
-function useClickCount() {
+function useTF() {
+  console.log(tf.tensor([1, 2, 3, 4]));
   const clickCount = ref(0);
   function increment() {
-    clickCount.value += 1
+    clickCount.value += 1;
     return clickCount.value;
   }
 
@@ -43,22 +38,22 @@ export default defineComponent({
   props: {
     title: {
       type: String,
-      required: true
+      required: true,
     },
     todos: {
       type: Array as PropType<Todo[]>,
-      default: () => []
+      default: () => [],
     },
     meta: {
       type: Object as PropType<Meta>,
-      required: true
+      required: true,
     },
     active: {
-      type: Boolean
-    }
+      type: Boolean,
+    },
   },
-  setup (props) {
-    return { ...useClickCount(), ...useDisplayTodo(toRef(props, 'todos')) };
+  setup(props) {
+    return { ...useTF(), ...useDisplayTodo(toRef(props, 'todos')) };
   },
 });
 </script>
