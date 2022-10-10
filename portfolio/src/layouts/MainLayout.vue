@@ -1,9 +1,10 @@
 <template>
   <q-layout view="lHh Lpr lFf">
     <q-header elevated>
-      <q-toolbar>
-        <q-toolbar-title> Daniel's Portfolio </q-toolbar-title>
-
+      <q-toolbar class="row justify-between">
+        <q-btn label="Daniel's Portfolio" to="/" />
+        <q-btn label="Stereo vision" to="stereo" />
+        <q-btn label="Machine learning" to="tfjs" />
         <div>Quasar v{{ $q.version }}</div>
       </q-toolbar>
     </q-header>
