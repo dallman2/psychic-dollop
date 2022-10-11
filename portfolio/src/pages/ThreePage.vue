@@ -1,6 +1,13 @@
 <template lang="">
-  <q-page class="flex flex-center">
-    <div class="" ref="threeContainer"></div>
+  <q-page class="column justify-start align-center">
+    <div class="row justify-center align-center">The single cam view</div>
+    <div class="row justify-center align-center" ref="threeContainer"></div>
+    <div class="row justify-center align-center">The stereo cam view</div>
+    <div class="row justify-center align-center" ref="threeStereoContainer"></div>
+    <div class="row justify-center align-center">The stereo cam buffer view</div>
+    <div class="row justify-center align-center" >
+      <canvas width="1280" height="360" ref="threeStereoBufferContainer"/>
+    </div>
   </q-page>
 </template>
 <script>
@@ -12,7 +19,11 @@ export default {
     return { three };
   },
   mounted() {
-    this.three.attachAndRender(this.$refs['threeContainer']);
+    this.three.attachAndRender(
+      this.$refs['threeContainer'],
+      this.$refs['threeStereoContainer'],
+      this.$refs['threeStereoBufferContainer']
+    );
   },
 };
 </script>

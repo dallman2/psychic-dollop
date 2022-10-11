@@ -2,17 +2,81 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 // import { TransformControls } from "three/examples/jsm/controls/TransformControls";
 
-let camera,
-  stereoCam,
-  scene = new THREE.Scene(),
-  raycaster = new THREE.Raycaster(),
-  pointer = new THREE.Vector2(),
-  intersectedObj,
-  oldColor,
-  raycastExcludeList = [],
-  worldMap = {};
+/**
+ * @typedef ViewerDimensions
+ * @type {object}
+ * @prop {number} w - width of viewer
+ * @prop {number} h - height of viewer
+ */
 
-const HIGHLIGHT_COLOR = 0xff0000;
+const HIGHLIGHT_COLOR = 0xff0000,
+  origin = new THREE.Vector3(0, 0, 0),
+  /** @type {ViewerDimensions} holds dims of our viewer */
+  viewerDims = {
+    w: 1280,
+    h: 720,
+  };
+/** @type {THREE.PerspectiveCamera} the camera we use to look at the scene */
+let camera,
+  /** @type {THREE.StereoCamera} the stereo cam helper obj used for stereo vis */
+  stereoCam,
+  /** @type {THREE.Scene} the scene */
+  scene = new THREE.Scene(),
+  /** @type {THREE.Raycaster} used for raycasting, the actual raycaster */
+  raycaster = new THREE.Raycaster(),
+  /** @type {THREE.Vector2} used for raycasting, stores the location of the mouse on the canvas */
+  pointer = new THREE.Vector2(),
+  /** @type {THREE.Object3D} used for raycasting, stores the currently intersected object  */
+  intersectedObj,
+  /** @type {THREE.Color} used for raycasting, stores the original color of an object */
+  oldColor,
+  /** @type {array.<THREE.Object3D>} a list of all objects which are to be passed over during raycasting */
+  raycastExcludeList = [],
+  /** @type {object.<string, THREE.Object3D>} a map representing all renderable objects currently in the world */
+  worldMap = {},
+  /** @type {number} frame counter */
+  f = 0;
+
+scene.background = new THREE.Color(0xf0f0f0);
+
+/**
+ * @return {obj<string, array>} an object with two keys, ```inc``` and ```exc```, refering to objects to include and exclude
+ */
+function _generateProps() {
+  const ambLight = new THREE.AmbientLight(0xffffff, 0.3),
+    lightGroup = new THREE.Group(),
+    light1 = new THREE.PointLight(0xffffff, 0.8),
+    helper = new THREE.Box3Helper(
+      new THREE.Box3(origin, new THREE.Vector3(2, 2, 2)),
+      0x000000
+    ),
+    gridHelper = new THREE.GridHelper(10, 10, 0x00ffff, 0xff00ff),
+    geometry = new THREE.BoxBufferGeometry(1, 1, 1);
+
+  helper.position.set(origin);
+  light1.position.set(1, 1, 1);
+  addObjToGroup([helper, light1], lightGroup, true);
+  lightGroup.position.set(10, 75, 10);
+  gridHelper.position.set(0, -10, 0);
+
+  // const view = new THREE.Mesh(bufGeom, new THREE.Mater)
+
+  const cubes = [
+    0x00ff00, 0x44ff00, 0x00ff88, 0x88ff00, 0x00ffcc, 0xccff00, 0x00ffee,
+  ].map((c, idx) => {
+    const cube = new THREE.Mesh(
+      geometry,
+      new THREE.MeshLambertMaterial({ color: c })
+    );
+    cube.position.set(idx * 2, 0, idx);
+    return cube;
+  });
+
+  return {
+    inc: [...cubes],
+    exc: [gridHelper, ambLight, lightGroup],
+  };
+}
 
 /**
  * calculate objects intersecting the picking ray
@@ -54,93 +118,68 @@ function checkIntersections() {
 
 /**
  *
- * @param {THREE.Object3D} obj the object you want to add to the scene
+ * @param {THREE.Object3D | [THREE.Object3D]} obj the object(s) you want to add to the scene
  * @param {boolean} exclude should we exclude this object from the raycasting process? default false
  */
 function addObjToScene(obj, exclude = false) {
-  if (exclude) raycastExcludeList.push(obj.id);
-  worldMap[obj.id] = obj;
-  scene.add(obj);
+  if (typeof obj == THREE.Object3D) obj = [obj];
+  if (exclude) obj.forEach((el) => raycastExcludeList.push(el.id));
+  console.log(obj);
+  obj.forEach((el) => {
+    worldMap[el.id] = el;
+    scene.add(el);
+  });
 }
 
 /**
- *
- * @param {THREE.Object3D} obj the object you want to add to a group
+ * @param {THREE.Object3D | [THREE.Object3D]} obj the object(s) you want to add to a group
  * @param {THREE.Group} group the group you want to add it to
  * @param {boolean} exclude should we exclude this object from the raycasting process? default false
  */
 function addObjToGroup(obj, group, exclude = false) {
-  if (exclude) raycastExcludeList.push(obj.id);
-  worldMap[obj.id] = obj;
-  group.add(obj);
+  if (typeof obj == THREE.Object3D) obj = [obj];
+  if (exclude) obj.forEach((el) => raycastExcludeList.push(el.id));
+  obj.forEach((el) => {
+    worldMap[el.id] = el;
+    group.add(el);
+  });
 }
 
 /**
  *
- * @param {DomElement} el
+ * @param {HTMLCanvasElement} imgDump
+ * @param {HTMLCanvasElement} stereoEl
+ * @param {HTMLCanvasElement} el
  */
-function attachAndRender(el) {
-  let viewerDims = {
-    w: 1280,
-    h: 720,
-  };
+function attachAndRender(el, stereoEl, imgDump) {
+  // create the camera and set it up
   camera = new THREE.PerspectiveCamera(
     90,
-    viewerDims.w / 2 / viewerDims.h,
+    viewerDims.w / viewerDims.h,
     0.1,
     1000
   );
   camera.position.set(10, 10, 10);
-  camera.lookAt(new THREE.Vector3(0, 0, 0));
-
-  scene.background = new THREE.Color(0xf0f0f0);
-  addObjToScene(new THREE.AmbientLight(0xffffff, 0.3));
-
-  const lightGroup = new THREE.Group();
-  const helper = new THREE.Box3Helper(
-    new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(2, 2, 2)),
-    0x000000
-  );
-  helper.position.set(0, 0, 0);
-  addObjToGroup(helper, lightGroup, true);
-
-  const light1 = new THREE.PointLight(0xffffff, 0.8);
-  light1.position.set(1, 1, 1);
-  addObjToGroup(light1, lightGroup, true);
-
-  lightGroup.position.set(10, 75, 10);
-  addObjToScene(lightGroup);
-
-  const gridHelper = new THREE.GridHelper(10, 10, 0x00ffff, 0xff00ff);
-  gridHelper.position.set(0, -10, 0);
-  addObjToScene(gridHelper, true);
-
-  const geometry = new THREE.BoxBufferGeometry(1, 1, 1);
-  const colors = [
-    0x00ff00, 0x44ff00, 0x00ff88, 0x88ff00, 0x00ffcc, 0xccff00, 0x00ffee,
-  ];
-  colors.forEach((c, idx) => {
-    const cube = new THREE.Mesh(
-      geometry,
-      new THREE.MeshLambertMaterial({ color: c })
-    );
-    cube.position.set(idx * 2, 0, idx);
-    addObjToScene(cube);
-  });
-
+  camera.lookAt(origin);
+  // create some props and add them
+  const { inc, exc } = _generateProps();
+  addObjToScene(inc);
+  addObjToScene(exc, true);
+  // create the stereo cam
   stereoCam = new THREE.StereoCamera();
   stereoCam.update(camera);
-  stereoCam.eyeSep = 0.5;
-  console.log(stereoCam);
-
-  let renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
+  // create the renderers
+  let renderer = new THREE.WebGLRenderer({ antialias: true }),
+    stereoRenderer = new THREE.WebGLRenderer({ antialias: true });
+  // setup for renderers
   renderer.setSize(viewerDims.w, viewerDims.h);
-
-  // let controls = new TransformControls(camera, renderer.domElement);
+  stereoRenderer.setSize(viewerDims.w, viewerDims.h / 2);
+  // dont really know where to put this
   let controls = new OrbitControls(camera, renderer.domElement);
-
+  // attach the renderers
   el.appendChild(renderer.domElement);
+  stereoEl.appendChild(stereoRenderer.domElement);
+  // setup event listeners for raycasting stuff
   renderer.domElement.addEventListener('pointermove', (ev) => {
     // calculate pointer position in normalized device coordinates
     // (-1 to +1) for both components
@@ -150,43 +189,67 @@ function attachAndRender(el) {
   renderer.domElement.addEventListener('click', (ev) => {
     if (intersectedObj?.type == 'Mesh') console.log(intersectedObj.uuid);
   });
+  // call the render loop
   render();
-
+  /**
+   * this is the render loop. it performs dark magic
+   */
   function render() {
+    // console.log(f);
     camera.lookAt(scene.position);
     camera.updateMatrixWorld();
-
+    // do the raycasting
     checkIntersections();
 
     renderer.clear();
     renderer.render(scene, camera);
 
-    {
-      // we need to manually update camera matrix
-      // because it will not be passed directly to
-      // renderer.render were it would normally be
-      // updated
+    // ============================================================================
+    // code from stackoverflow https://stackoverflow.com/questions/61052900/can-anyone-explain-what-is-going-on-in-this-code-for-three-js-stereoeffect
+    const size = new THREE.Vector2();
+    camera.updateWorldMatrix();
+    stereoCam.update(camera);
+    // baseline setter
+    stereoCam.eyeSep = 0.5;
+    // this is described in the post on stackoverflow
+    stereoRenderer.getSize(size);
+    stereoRenderer.setScissorTest(true);
+    stereoRenderer.setScissor(0, 0, size.width / 2, size.height);
+    stereoRenderer.setViewport(0, 0, size.width / 2, size.height);
+    stereoRenderer.render(scene, stereoCam.cameraL);
+    stereoRenderer.setScissor(size.width / 2, 0, size.width / 2, size.height);
+    stereoRenderer.setViewport(size.width / 2, 0, size.width / 2, size.height);
+    stereoRenderer.render(scene, stereoCam.cameraR);
 
-      camera.updateWorldMatrix();
-      stereoCam.update(camera);
+    stereoRenderer.setScissorTest(false);
+    // ============================================================================
 
-      const size = new THREE.Vector2();
-      renderer.getSize(size);
-
-      renderer.setScissorTest(true);
-
-      renderer.setScissor(0, 0, size.width / 2, size.height);
-      renderer.setViewport(0, 0, size.width / 2, size.height);
-      renderer.render(scene, stereoCam.cameraL);
-
-      renderer.setScissor(size.width / 2, 0, size.width / 2, size.height);
-      renderer.setViewport(size.width / 2, 0, size.width / 2, size.height);
-      renderer.render(scene, stereoCam.cameraR);
-
-      renderer.setScissorTest(false);
+    // every tenth frame, do stereovis
+    if (f % 10 == 0) {
+      let gl = stereoRenderer.domElement.getContext('webgl2');
+      const pixels = new Uint8Array(
+        gl.drawingBufferHeight * gl.drawingBufferWidth * 4
+      );
+      gl.readPixels(
+        0,
+        0,
+        gl.drawingBufferWidth,
+        gl.drawingBufferHeight,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        pixels
+      );
+      // TODO need to undo the mirroring about the x axis. read buffer one line at a time (width * 4) and put it at the end of the new buffer
+      let d = new ImageData(
+        new Uint8ClampedArray(pixels.buffer),
+        gl.drawingBufferWidth
+      );
+      let ctx = imgDump.getContext('2d');
+      ctx.putImageData(d, 0, 0);
     }
 
-    window.requestAnimationFrame(render, renderer.domElement);
+    // complete the recursion
+    f = window.requestAnimationFrame(render, renderer.domElement);
   }
 }
 
