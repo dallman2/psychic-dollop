@@ -79,6 +79,76 @@ function _generateProps() {
 }
 
 /**
+ * copys the src to the dest mirrored about the width (x) axis. ie, this
+ *
+ * ```--6--------5----------```
+ *
+ * ```--------5-----------3-```
+ *
+ * ```---4------------------```
+ *
+ * becomes
+ *
+ * ```---4------------------```
+ *
+ * ```--------5-----------3-```
+ *
+ * ```--6--------5----------```
+ *
+ *
+ * @param {ArrayBufferLike} bufSrc
+ * @param {ArrayBufferLike} bufDest
+ * @param {number} w
+ * @param {number} h
+ * @param {number} bytesPerPix
+ */
+function _flip1DImageBuffer(bufSrc, bufDest, w, h, bytesPerPix) {
+  const mult = w * bytesPerPix;
+  for (let line = 0; line < h; line++) {
+    const start = line * mult,
+      end = start + mult,
+      s = bufSrc.slice(start, end),
+      targetLineStart = (h - (line + 1)) * mult;
+    for (let i = 0; i < mult; i++) {
+      bufDest[targetLineStart + i] = s[i];
+    }
+  }
+}
+
+/**
+ * do the thing, ya know?
+ * @param {HTMLCanvasElement} stereoCamDomEl
+ * @param {HTMLCanvasElement} outputDomEl
+ */
+function _doStereoVis(stereoCamDomEl, outputDomEl) {
+  let gl = stereoCamDomEl.getContext('webgl2');
+  const pixels = new Uint8Array(
+    gl.drawingBufferHeight * gl.drawingBufferWidth * 4
+  );
+  gl.readPixels(
+    0,
+    0,
+    gl.drawingBufferWidth,
+    gl.drawingBufferHeight,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    pixels
+  );
+  // TODO need to undo the mirroring about the x axis. read buffer one line at a time (width * 4) and put it at the end of the new buffer
+  let flipped = new Uint8ClampedArray(pixels.length);
+  _flip1DImageBuffer(
+    pixels,
+    flipped,
+    gl.drawingBufferWidth,
+    gl.drawingBufferHeight,
+    4
+  );
+  let d = new ImageData(flipped, gl.drawingBufferWidth);
+  let ctx = outputDomEl.getContext('2d');
+  ctx.putImageData(d, 0, 0);
+}
+
+/**
  * calculate objects intersecting the picking ray
  * effectively, the emissiveity property 'travels' from object to object
  * thats why we have an intersectedObj variable
@@ -191,6 +261,7 @@ function attachAndRender(el, stereoEl, imgDump) {
   });
   // call the render loop
   render();
+
   /**
    * this is the render loop. it performs dark magic
    */
@@ -224,28 +295,9 @@ function attachAndRender(el, stereoEl, imgDump) {
     stereoRenderer.setScissorTest(false);
     // ============================================================================
 
-    // every tenth frame, do stereovis
-    if (f % 10 == 0) {
-      let gl = stereoRenderer.domElement.getContext('webgl2');
-      const pixels = new Uint8Array(
-        gl.drawingBufferHeight * gl.drawingBufferWidth * 4
-      );
-      gl.readPixels(
-        0,
-        0,
-        gl.drawingBufferWidth,
-        gl.drawingBufferHeight,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        pixels
-      );
-      // TODO need to undo the mirroring about the x axis. read buffer one line at a time (width * 4) and put it at the end of the new buffer
-      let d = new ImageData(
-        new Uint8ClampedArray(pixels.buffer),
-        gl.drawingBufferWidth
-      );
-      let ctx = imgDump.getContext('2d');
-      ctx.putImageData(d, 0, 0);
+    // every fourth frame, do stereovis
+    if (f % 4 == 0) {
+      _doStereoVis(stereoRenderer.domElement, imgDump);
     }
 
     // complete the recursion
