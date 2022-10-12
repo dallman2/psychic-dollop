@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import cv from '@techstark/opencv-js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 // import { TransformControls } from "three/examples/jsm/controls/TransformControls";
 
@@ -123,27 +124,20 @@ function _flip1DImageBuffer(bufSrc, bufDest, w, h, bytesPerPix) {
 function _doStereoVis(stereoCamDomEl, outputDomEl) {
   let gl = stereoCamDomEl.getContext('webgl2');
   const pixels = new Uint8Array(
-    gl.drawingBufferHeight * gl.drawingBufferWidth * 4
-  );
-  gl.readPixels(
-    0,
-    0,
-    gl.drawingBufferWidth,
-    gl.drawingBufferHeight,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    pixels
-  );
+      gl.drawingBufferHeight * gl.drawingBufferWidth * 4
+    ),
+    h = gl.drawingBufferHeight,
+    w = gl.drawingBufferWidth;
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
   // TODO need to undo the mirroring about the x axis. read buffer one line at a time (width * 4) and put it at the end of the new buffer
   let flipped = new Uint8ClampedArray(pixels.length);
-  _flip1DImageBuffer(
-    pixels,
-    flipped,
-    gl.drawingBufferWidth,
-    gl.drawingBufferHeight,
-    4
-  );
-  let d = new ImageData(flipped, gl.drawingBufferWidth);
+  _flip1DImageBuffer(pixels, flipped, w, h, 4);
+
+  let cvImg = cv.matFromArray(h, w, cv.CV_8UC4, flipped);
+  // let cvImg = new cv.Mat(cv.Size(h, w), cv.CV_8UC4, flipped.buffer);
+  console.log(cvImg);
+
+  let d = new ImageData(flipped, w);
   let ctx = outputDomEl.getContext('2d');
   ctx.putImageData(d, 0, 0);
 }
@@ -259,8 +253,6 @@ function attachAndRender(el, stereoEl, imgDump) {
   renderer.domElement.addEventListener('click', (ev) => {
     if (intersectedObj?.type == 'Mesh') console.log(intersectedObj.uuid);
   });
-  // call the render loop
-  render();
 
   /**
    * this is the render loop. it performs dark magic
@@ -303,6 +295,8 @@ function attachAndRender(el, stereoEl, imgDump) {
     // complete the recursion
     f = window.requestAnimationFrame(render, renderer.domElement);
   }
+  // call the render loop after a bit because we need the cv lib to actually load
+  setTimeout(() => render(), 3000);
 }
 
 export default function useThree() {
