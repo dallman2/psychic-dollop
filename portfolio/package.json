@@ -1,8 +1,8 @@
 {
   "name": "portfolio",
   "version": "0.0.1",
-  "description": "A project to show off some of my skills",
-  "productName": "dallman portfolio",
+  "description": "A Vue project with some cool toys included.\nMade with love by Dan",
+  "productName": "Daniel's Portfolio",
   "author": "DESKTOP-QKIA14E\\danny <dallman@appliedres.com>",
   "private": true,
   "scripts": {

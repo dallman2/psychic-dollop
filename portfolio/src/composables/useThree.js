@@ -3,6 +3,8 @@ import cv from '@techstark/opencv-js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 // import { TransformControls } from "three/examples/jsm/controls/TransformControls";
 
+import { ref } from 'vue';
+
 /**
  * @typedef ViewerDimensions
  * @type {object}
@@ -37,6 +39,28 @@ let camera,
   worldMap = {},
   /** @type {number} frame counter */
   f = 0;
+
+/**
+ * A timer for measuring performance. call start(), then call finish(). easy.
+ */
+class Timer {
+  constructor() {
+    this.begin = 0;
+    this.end = 0;
+    this.label = '';
+  }
+  /**
+   * @param {string} label what should the timer call this when it prints it
+   */
+  start(label) {
+    this.label = label;
+    this.begin = performance.now();
+  }
+  finish() {
+    this.end = performance.now();
+    console.log(`Timer: ${this.label} took ${this.end - this.begin}ms`);
+  }
+}
 
 scene.background = new THREE.Color(0xf0f0f0);
 
@@ -80,66 +104,41 @@ function _generateProps() {
 }
 
 /**
- * copys the src to the dest mirrored about the width (x) axis. ie, this
- *
- * ```--6--------5----------```
- *
- * ```--------5-----------3-```
- *
- * ```---4------------------```
- *
- * becomes
- *
- * ```---4------------------```
- *
- * ```--------5-----------3-```
- *
- * ```--6--------5----------```
- *
- *
- * @param {ArrayBufferLike} bufSrc
- * @param {ArrayBufferLike} bufDest
- * @param {number} w
- * @param {number} h
- * @param {number} bytesPerPix
- */
-function _flip1DImageBuffer(bufSrc, bufDest, w, h, bytesPerPix) {
-  const mult = w * bytesPerPix;
-  for (let line = 0; line < h; line++) {
-    const start = line * mult,
-      end = start + mult,
-      s = bufSrc.slice(start, end),
-      targetLineStart = (h - (line + 1)) * mult;
-    for (let i = 0; i < mult; i++) {
-      bufDest[targetLineStart + i] = s[i];
-    }
-  }
-}
-
-/**
  * do the thing, ya know?
  * @param {HTMLCanvasElement} stereoCamDomEl
- * @param {HTMLCanvasElement} outputDomEl
+ * @param {HTMLCanvasElement} leftOut
+ * @param {HTMLCanvasElement} rightOut
  */
-function _doStereoVis(stereoCamDomEl, outputDomEl) {
+function _doStereoVis(stereoCamDomEl, leftOut, rightOut) {
   let gl = stereoCamDomEl.getContext('webgl2');
   const pixels = new Uint8Array(
       gl.drawingBufferHeight * gl.drawingBufferWidth * 4
     ),
     h = gl.drawingBufferHeight,
-    w = gl.drawingBufferWidth;
+    w = gl.drawingBufferWidth,
+    t = new Timer();
+
+  // get image from stereo canvas
   gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-  // TODO need to undo the mirroring about the x axis. read buffer one line at a time (width * 4) and put it at the end of the new buffer
-  let flipped = new Uint8ClampedArray(pixels.length);
-  _flip1DImageBuffer(pixels, flipped, w, h, 4);
+  // create a mat for the flipped version of the image
+  const orig = cv.matFromArray(h, w, cv.CV_8UC4, pixels),
+    flipped = new cv.Mat(new cv.Size(w, h), cv.CV_8UC4);
+  // flip it
+  cv.flip(orig, flipped, 0);
+  // cut into left and right eye views
+  const leftEye = flipped.roi(new cv.Rect(0, 0, w / 2, h));
+  const rightEye = flipped.roi(new cv.Rect(w / 2, 0, w / 2, h));
 
-  let cvImg = cv.matFromArray(h, w, cv.CV_8UC4, flipped);
-  // let cvImg = new cv.Mat(cv.Size(h, w), cv.CV_8UC4, flipped.buffer);
-  console.log(cvImg);
+  // do the thing
+  // cv.stereoRectifyUncalibrated()
 
-  let d = new ImageData(flipped, w);
-  let ctx = outputDomEl.getContext('2d');
-  ctx.putImageData(d, 0, 0);
+  cv.imshow(leftOut, leftEye);
+  cv.imshow(rightOut, rightEye);
+
+  orig.delete();
+  flipped.delete();
+  leftEye.delete();
+  rightEye.delete();
 }
 
 /**
@@ -211,11 +210,13 @@ function addObjToGroup(obj, group, exclude = false) {
 
 /**
  *
- * @param {HTMLCanvasElement} imgDump
- * @param {HTMLCanvasElement} stereoEl
  * @param {HTMLCanvasElement} el
+ * @param {HTMLCanvasElement} stereoEl
+ * @param {HTMLCanvasElement} leftOut
+ * @param {HTMLCanvasElement} rightOut
+ * @param {ref} cvReady
  */
-function attachAndRender(el, stereoEl, imgDump) {
+function attachAndRender(el, stereoEl, leftOut, rightOut, cvReady) {
   // create the camera and set it up
   camera = new THREE.PerspectiveCamera(
     90,
@@ -289,14 +290,32 @@ function attachAndRender(el, stereoEl, imgDump) {
 
     // every fourth frame, do stereovis
     if (f % 4 == 0) {
-      _doStereoVis(stereoRenderer.domElement, imgDump);
+      try {
+        _doStereoVis(stereoRenderer.domElement, leftOut, rightOut);
+      } catch (e) {
+        console.log('fug');
+        console.log(e);
+      }
     }
 
     // complete the recursion
     f = window.requestAnimationFrame(render, renderer.domElement);
   }
   // call the render loop after a bit because we need the cv lib to actually load
-  setTimeout(() => render(), 3000);
+  function looper() {
+    setTimeout(timeoutCB, 500);
+  }
+  let timeoutCB = () => {
+    try {
+      new cv.Point(1, 2);
+      cvReady();
+      render();
+    } catch (err) {
+      console.log(err);
+      looper();
+    }
+  };
+  looper();
 }
 
 export default function useThree() {
