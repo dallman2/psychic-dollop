@@ -88,7 +88,7 @@ module.exports = configure(function (/* ctx */) {
       config: {
         brand: {
           primary: '#2b2b2b',
-          secondary: '#645682',
+          secondary: '#8867cf',
           accent: '#bfde71',
 
           dark: '#0d0d0d',
@@ -96,7 +96,7 @@ module.exports = configure(function (/* ctx */) {
 
           positive: '#21BA45',
           negative: '#C10015',
-          info: '#31CCEC',
+          info: '#2e7eff',
           warning: '#F2C037',
         },
       },

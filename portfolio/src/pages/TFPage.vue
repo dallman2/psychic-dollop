@@ -1,9 +1,15 @@
 <template lang="">
-  <q-page>
-    <div>ML Stuff</div>
+  <q-page class="row justify-center items-start">
+    <StoryBoard/>
+
   </q-page>
 </template>
 <script>
-export default {};
+import StoryBoard from 'components/StoryBoard.vue'
+export default {
+  components:{
+    StoryBoard
+  }
+};
 </script>
 <style lang=""></style>
