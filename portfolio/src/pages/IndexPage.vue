@@ -1,13 +1,28 @@
 <template>
-  <q-page class="row items-center justify-evenly">
-    <h1>Boopus Header 🍆</h1>
+  <q-page class="row justify-center items-start relative-position">
+    <ScrollFixer :wide="wide">
+      <template #content>
+        <h1>Boopus Header 🍆</h1>
+      </template>
+    </ScrollFixer>
   </q-page>
 </template>
 
-<script lang="ts">
-import { defineComponent } from 'vue';
-
-export default defineComponent({
-  name: 'IndexPage',
-});
+<script>
+import ScrollFixer from 'components/ScrollFixer.vue';
+import { useQuasar } from 'quasar';
+export default {
+  setup() {
+    let $q = useQuasar();
+    return { $q };
+  },
+  components: {
+    ScrollFixer,
+  },
+  computed: {
+    wide() {
+      return this.$q.screen.width > 900;
+    },
+  },
+};
 </script>

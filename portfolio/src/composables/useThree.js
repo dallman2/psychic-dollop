@@ -20,9 +20,9 @@ const HIGHLIGHT_COLOR = 0xff0000,
     h: 720,
   };
 /** @type {THREE.PerspectiveCamera} the camera we use to look at the scene */
-let camera,
+let camera = null,
   /** @type {THREE.StereoCamera} the stereo cam helper obj used for stereo vis */
-  stereoCam,
+  stereoCam = null,
   /** @type {THREE.Scene} the scene */
   scene = new THREE.Scene(),
   /** @type {THREE.Raycaster} used for raycasting, the actual raycaster */
@@ -30,9 +30,9 @@ let camera,
   /** @type {THREE.Vector2} used for raycasting, stores the location of the mouse on the canvas */
   pointer = new THREE.Vector2(),
   /** @type {THREE.Object3D} used for raycasting, stores the currently intersected object  */
-  intersectedObj,
+  intersectedObj = null,
   /** @type {THREE.Color} used for raycasting, stores the original color of an object */
-  oldColor,
+  oldColor = null,
   /** @type {array.<THREE.Object3D>} a list of all objects which are to be passed over during raycasting */
   raycastExcludeList = [],
   /** @type {object.<string, THREE.Object3D>} a map representing all renderable objects currently in the world */
@@ -40,6 +40,26 @@ let camera,
   /** @type {number} frame counter */
   f = 0;
 
+/**
+ * this function just resets the hidden state in this file.
+ * We have to do this because we might navigate away from the page that is rendering.
+ * When we navigate back, the attachAndRender function is called again, which would
+ * duplicate items and cause all sorts of issues if everything is not in the original state
+ */
+function resetState() {
+  camera = null;
+  stereoCam = null;
+  scene = new THREE.Scene();
+  raycaster = new THREE.Raycaster();
+  pointer = new THREE.Vector2();
+  intersectedObj = null;
+  oldColor = null;
+  raycastExcludeList = [];
+  worldMap = {};
+  f = 0;
+
+  scene.background = new THREE.Color(0xf0f0f0);
+}
 /**
  * A timer for measuring performance. call start(), then call finish(). easy.
  */
@@ -62,8 +82,6 @@ class Timer {
   }
 }
 
-scene.background = new THREE.Color(0xf0f0f0);
-
 /**
  * @return {obj<string, array>} an object with two keys, ```inc``` and ```exc```, refering to objects to include and exclude
  */
@@ -83,8 +101,6 @@ function _generateProps() {
   addObjToGroup([helper, light1], lightGroup, true);
   lightGroup.position.set(10, 75, 10);
   gridHelper.position.set(0, -10, 0);
-
-  // const view = new THREE.Mesh(bufGeom, new THREE.Mater)
 
   const cubes = [
     0x00ff00, 0x44ff00, 0x00ff88, 0x88ff00, 0x00ffcc, 0xccff00, 0x00ffee,
@@ -217,6 +233,7 @@ function addObjToGroup(obj, group, exclude = false) {
  * @param {ref} cvReady
  */
 function attachAndRender(el, stereoEl, leftOut, rightOut, cvReady) {
+  resetState();
   // create the camera and set it up
   camera = new THREE.PerspectiveCamera(
     90,
