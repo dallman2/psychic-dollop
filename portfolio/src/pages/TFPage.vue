@@ -1,8 +1,10 @@
 <template lang="">
-  <q-page class="row justify-center items-start relative-position">
-    <ScrollFixer :wide="wide">
+  <q-page class="row justify-center items-start">
+    <ScrollFixer>
       <template #content>
-        <StoryBoard :wide="wide"/>
+        <div class="row justify-center">
+          <StoryBoard :wide="wide" />
+        </div>
       </template>
     </ScrollFixer>
   </q-page>
@@ -27,5 +29,4 @@ export default {
   },
 };
 </script>
-<style lang="">
-</style>
+<style lang=""></style>

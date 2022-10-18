@@ -11,6 +11,12 @@ import { ref } from 'vue';
  * @prop {number} w - width of viewer
  * @prop {number} h - height of viewer
  */
+/**
+ * @typedef StereoImagePair
+ * @type {object}
+ * @prop {cv.Mat} l - left eye image
+ * @prop {cv.Mat} r - right eye image
+ */
 
 const HIGHLIGHT_COLOR = 0xff0000,
   origin = new THREE.Vector3(0, 0, 0),
@@ -25,6 +31,14 @@ let camera = null,
   stereoCam = null,
   /** @type {THREE.Scene} the scene */
   scene = new THREE.Scene(),
+  /** @type {THREE.Scene} the scene used for stereo calibration */
+  calibrationScene = new THREE.Scene(),
+  /** @type {boolean} render the calibration scene? */
+  calibrationMode = false,
+  /** @type {boolean} should i capture a frame for calibration on the next render? */
+  captureCalibPair = false,
+  /** @type {StereoImagePair[]} list of captured pairs to be used in calibration*/
+  capturedCalibPairs = [],
   /** @type {THREE.Raycaster} used for raycasting, the actual raycaster */
   raycaster = new THREE.Raycaster(),
   /** @type {THREE.Vector2} used for raycasting, stores the location of the mouse on the canvas */
@@ -36,7 +50,10 @@ let camera = null,
   /** @type {array.<THREE.Object3D>} a list of all objects which are to be passed over during raycasting */
   raycastExcludeList = [],
   /** @type {object.<string, THREE.Object3D>} a map representing all renderable objects currently in the world */
-  worldMap = {},
+  worldMap = {
+    prod: {},
+    default: {},
+  },
   /** @type {number} frame counter */
   f = 0;
 
@@ -50,15 +67,25 @@ function resetState() {
   camera = null;
   stereoCam = null;
   scene = new THREE.Scene();
+  calibrationScene = new THREE.Scene();
+  calibrationMode = false;
+  captureCalibPair = false;
+  capturedCalibPairs = [];
   raycaster = new THREE.Raycaster();
   pointer = new THREE.Vector2();
   intersectedObj = null;
   oldColor = null;
   raycastExcludeList = [];
-  worldMap = {};
+  worldMap = {
+    calib: {},
+    prod: {},
+  };
   f = 0;
 
   scene.background = new THREE.Color(0xf0f0f0);
+  scene.name = 'prod';
+  calibrationScene.background = new THREE.Color(0xf0f0f0);
+  calibrationScene.name = 'calib';
 }
 /**
  * A timer for measuring performance. call start(), then call finish(). easy.
@@ -80,6 +107,77 @@ class Timer {
     this.end = performance.now();
     console.log(`Timer: ${this.label} took ${this.end - this.begin}ms`);
   }
+}
+
+/**
+ * @returns {THREE.Scene} the active scene
+ */
+function getScene() {
+  return calibrationMode ? calibrationScene : scene;
+}
+
+/**
+ * this function acts as a toggle switch
+ * between calibration mode and normal mode
+ * @return {boolean} the new state of calibrationMode
+ */
+function toggleCalibrationMode() {
+  calibrationMode = !calibrationMode;
+  return calibrationMode;
+}
+
+/**
+ * set the capture flag to true, a frame will be captured on the next render loop
+ * @return {number} the number of image pairs AFTER the next one is captured
+ */
+function captureCalibrationPair() {
+  captureCalibPair = true;
+  return capturedCalibPairs.length + 1;
+}
+
+function doStereoCalibration() {
+  // dont do it if there arent pairs
+  if (!capturedCalibPairs.length) return;
+
+  const points = new cv.Mat(new cv.Size(7 * 7, 3), cv.CV_32F);
+  console.log(points);
+}
+
+/**
+ * create the scene for calibration
+ * @param {number} rows rows in the chessboard
+ * @param {number} cols cols in the chessboard
+ * @return {obj<string, array>} an object with two keys, ```inc``` and ```exc```, refering to objects to include and exclude
+ */
+function _prepareCalibrationScene(rows, cols) {
+  const ambLight = new THREE.AmbientLight(0xffffff, 0.5),
+    geometry = new THREE.PlaneGeometry(1, 1),
+    blackMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      side: THREE.DoubleSide,
+    }),
+    whiteMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+    });
+
+  let squares = [];
+  for (let i = 0; i < cols; i++) {
+    for (let j = 0; j < rows; j++) {
+      // every other square should be white
+      let square;
+      if ((i % 2 && j % 2) || (!(i % 2) && !(j % 2)))
+        square = new THREE.Mesh(geometry, blackMaterial);
+      else square = new THREE.Mesh(geometry, whiteMaterial);
+      square.position.set(i - cols / 2, j - rows / 2, 0);
+      squares.push(square);
+    }
+  }
+
+  return {
+    calibInc: [...squares],
+    calibExc: [ambLight],
+  };
 }
 
 /**
@@ -145,8 +243,11 @@ function _doStereoVis(stereoCamDomEl, leftOut, rightOut) {
   const leftEye = flipped.roi(new cv.Rect(0, 0, w / 2, h));
   const rightEye = flipped.roi(new cv.Rect(w / 2, 0, w / 2, h));
 
-  // do the thing
-  // cv.stereoRectifyUncalibrated()
+  if (calibrationMode && captureCalibPair) {
+    capturedCalibPairs.push({ l: leftEye, r: rightEye });
+    captureCalibPair = false;
+    console.log(capturedCalibPairs);
+  }
 
   cv.imshow(leftOut, leftEye);
   cv.imshow(rightOut, rightEye);
@@ -198,14 +299,14 @@ function checkIntersections() {
 /**
  *
  * @param {THREE.Object3D | [THREE.Object3D]} obj the object(s) you want to add to the scene
+ * @param {THREE.Scene} scene which scene should this object be added to?
  * @param {boolean} exclude should we exclude this object from the raycasting process? default false
  */
-function addObjToScene(obj, exclude = false) {
+function addObjToScene(obj, scene, exclude = false) {
   if (typeof obj == THREE.Object3D) obj = [obj];
-  if (exclude) obj.forEach((el) => raycastExcludeList.push(el.id));
-  console.log(obj);
-  obj.forEach((el) => {
-    worldMap[el.id] = el;
+  if (exclude) obj?.forEach((el) => raycastExcludeList.push(el.id));
+  obj?.forEach((el) => {
+    worldMap[scene.name][el.id] = el;
     scene.add(el);
   });
 }
@@ -243,10 +344,15 @@ function attachAndRender(el, stereoEl, leftOut, rightOut, cvReady) {
   );
   camera.position.set(10, 10, 10);
   camera.lookAt(origin);
+
+  // // create the calibration props for stereo vis
+  const { calibInc, calibExc } = _prepareCalibrationScene(8, 8);
+  addObjToScene(calibInc, calibrationScene);
+  addObjToScene(calibExc, calibrationScene, true);
   // create some props and add them
   const { inc, exc } = _generateProps();
-  addObjToScene(inc);
-  addObjToScene(exc, true);
+  addObjToScene(inc, scene);
+  addObjToScene(exc, scene, true);
   // create the stereo cam
   stereoCam = new THREE.StereoCamera();
   stereoCam.update(camera);
@@ -277,13 +383,13 @@ function attachAndRender(el, stereoEl, leftOut, rightOut, cvReady) {
    */
   function render() {
     // console.log(f);
-    camera.lookAt(scene.position);
+    camera.lookAt(origin);
     camera.updateMatrixWorld();
     // do the raycasting
     checkIntersections();
 
     renderer.clear();
-    renderer.render(scene, camera);
+    renderer.render(getScene(), camera);
 
     // ============================================================================
     // code from stackoverflow https://stackoverflow.com/questions/61052900/can-anyone-explain-what-is-going-on-in-this-code-for-three-js-stereoeffect
@@ -297,10 +403,10 @@ function attachAndRender(el, stereoEl, leftOut, rightOut, cvReady) {
     stereoRenderer.setScissorTest(true);
     stereoRenderer.setScissor(0, 0, size.width / 2, size.height);
     stereoRenderer.setViewport(0, 0, size.width / 2, size.height);
-    stereoRenderer.render(scene, stereoCam.cameraL);
+    stereoRenderer.render(getScene(), stereoCam.cameraL);
     stereoRenderer.setScissor(size.width / 2, 0, size.width / 2, size.height);
     stereoRenderer.setViewport(size.width / 2, 0, size.width / 2, size.height);
-    stereoRenderer.render(scene, stereoCam.cameraR);
+    stereoRenderer.render(getScene(), stereoCam.cameraR);
 
     stereoRenderer.setScissorTest(false);
     // ============================================================================
@@ -338,7 +444,8 @@ function attachAndRender(el, stereoEl, leftOut, rightOut, cvReady) {
 export default function useThree() {
   return {
     attachAndRender,
-    addObjToScene,
-    addObjToGroup,
+    toggleCalibrationMode,
+    captureCalibrationPair,
+    doStereoCalibration,
   };
 }

@@ -1,6 +1,6 @@
 <template>
   <q-page class="row justify-center items-start relative-position">
-    <ScrollFixer :wide="wide">
+    <ScrollFixer>
       <template #content>
         <h1>Boopus Header 🍆</h1>
       </template>
