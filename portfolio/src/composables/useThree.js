@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
-import { Mat } from 'mirada';
+import { Mat, TermCriteria } from 'mirada';
 import { ref } from 'vue';
 
 /**
@@ -134,18 +134,34 @@ function captureCalibrationPair() {
   return capturedCalibPairs.length + 1;
 }
 
+/**
+ * do a chessboard calibration for each of the stereo cameras.
+ * i followed the guide found here pretty closely:
+ * https://docs.opencv.org/3.4/dc/dbb/tutorial_py_calibration.html
+ * @returns
+ */
 function doStereoCalibration() {
   // dont do it if there arent pairs
   if (!capturedCalibPairs.length) return;
-
-  let imgPoints = [],
-    objPoints = [];
-  // create a matrix that represents the coordinates of the inner corners
-  // ie, [[0, 0, 0], [1, 0, 0], ... [0, 1, 0], ... [6, 6, 0]]
   const rows = 7,
     cols = 7,
-    dims = 3;
+    dims = 3,
+    tc = new cv.TermCriteria(
+      cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER,
+      30,
+      0.001
+    );
 
+  let imgPointsL = [],
+    imgPointsR = [],
+    objPointsL = [],
+    objPointsR = [];
+  /** the prefab matrix which yields the same output as
+   * ```
+   * objp = np.zeros((6*7,3), np.float32)
+   * objp[:,:2] = np.mgrid[0:7,0:6].T.reshape(-1,2)
+   * ```
+   */
   const prefabbedPoints = cv.Mat.zeros(
     new cv.Size(rows * cols, dims),
     cv.CV_32F
@@ -157,28 +173,81 @@ function doStereoCalibration() {
     }
   }
 
-  capturedCalibPairs.forEach((pair) => {
-    let { l, r } = pair,
-      lGray = new cv.Mat(),
-      rGray = new cv.Mat();
-    cv.cvtColor(l, lGray, cv.COLOR_BGR2GRAY);
-    cv.cvtColor(r, rGray, cv.COLOR_BGR2GRAY);
+  /**
+   * Perform vision calibration on one image for one camera,
+   * to avoid having two of every call
+   * @param {Mat} img the image to calibrate on
+   * @param {number} r number of inner rows in the chessboard
+   * @param {number} c number of inner cols in the chessboard
+   * @param {Mat} prePoints grid representing inner corners, use ```prefabbedPoints``` for this
+   * @param {Array} objPoints part of parallel array, stores the grid
+   * @param {Array} imgPoints other part of parallel array, stores the distorted grid
+   * @param {TermCriteria} crit term critera for finding subpixel corners
+   */
+  function singleImageCalib(img, r, c, prePoints, objPoints, imgPoints, crit) {
+    let gray = new cv.Mat(),
+      corners = new cv.Mat();
+    cv.cvtColor(img, gray, cv.COLOR_BGR2GRAY);
+    let found = cv.findChessboardCorners(gray, new cv.Size(r, c), corners);
 
-    let lCorners = new cv.Mat(),
-      rCorners = new cv.Mat();
-    let lFound = cv.findChessboardCorners(
-        lGray,
-        new cv.Size(rows, cols),
-        lCorners
-      ),
-      rFound = cv.findChessboardCorners(
-        rGray,
-        new cv.Size(rows, cols),
-        rCorners
+    if (found) {
+      // this is going to be double the length and cause a problem
+      objPoints.push(prePoints);
+      // get this from img proc
+      let betterCorners = cv.cornerSubPix(
+        gray,
+        corners,
+        new cv.Size(11, 11),
+        new cv.Size(-1, -1),
+        crit
       );
+      imgPoints.push(betterCorners);
+      // a drawChessboardCorners hook goes here
+    }
+  }
 
-    console.log(lFound);
-    console.log(rFound);
+  capturedCalibPairs.forEach((pair) => {
+    let { l, r } = pair;
+    singleImageCalib(
+      l,
+      rows,
+      cols,
+      prefabbedPoints,
+      objPointsL,
+      imgPointsL,
+      tc
+    );
+    singleImageCalib(
+      r,
+      rows,
+      cols,
+      prefabbedPoints,
+      objPointsR,
+      imgPointsR,
+      tc
+    );
+    // let camMat = new cv.Mat(new cv.Size(3, 3), cv.CV_32F),
+    // distCoeffs = new cv.Mat(),
+    // rvecs = new cv.Mat(),
+    // tvecs = new cv.Mat(),
+    // stdDevInt = new cv.Mat(),
+    // stdDevExt = new cv.Mat(),
+    // perViewErr = new cv.Mat();
+    let err = cv.stereoCalibrate(
+      objPoints
+      // imgPoints,
+      // gray.size(),
+      // camMat,
+      // distCoeffs,
+      // rvecs,
+      // tvecs,
+      // stdDevInt,
+      // stdDevExt,
+      // perViewErr
+      //flags
+      //tc
+    );
+    console.log(err);
   });
 }
 
