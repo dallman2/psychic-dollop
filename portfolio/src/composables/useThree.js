@@ -84,7 +84,7 @@ function resetState() {
 
   scene.background = new THREE.Color(0xf0f0f0);
   scene.name = 'prod';
-  calibrationScene.background = new THREE.Color(0xf0f0f0);
+  calibrationScene.background = new THREE.Color(0xffffff);
   calibrationScene.name = 'calib';
 }
 /**
@@ -139,8 +139,52 @@ function doStereoCalibration() {
   // dont do it if there arent pairs
   if (!capturedCalibPairs.length) return;
 
-  const points = new cv.Mat(new cv.Size(7 * 7, 3), cv.CV_32F);
-  console.log(points);
+  let imgPoints = [],
+    objPoints = [];
+  // create a matrix that represents the coordinates of the inner corners
+  // ie, [[0, 0, 0], [1, 0, 0], ... [0, 1, 0], ... [6, 6, 0]]
+  const rows = 7,
+    cols = 7,
+    dims = 3;
+
+  const prefabbedPoints = cv.Mat.zeros(
+    new cv.Size(rows * cols, dims),
+    cv.CV_32F
+  );
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      prefabbedPoints.data32F[i * cols * dims + j * dims + 0] = j;
+      prefabbedPoints.data32F[i * cols * dims + j * dims + 1] = i;
+    }
+  }
+  console.log(cv.findChessboardCorners);
+  console.log(cv.getVersionRevision);
+  console.log(cv.getVersionMajor);
+  console.log(cv.stereoCalibrate);
+
+  capturedCalibPairs.forEach((pair) => {
+    let { l, r } = pair,
+      lGray = new cv.Mat(),
+      rGray = new cv.Mat();
+    cv.cvtColor(l, lGray, cv.COLOR_BGR2GRAY);
+    cv.cvtColor(r, rGray, cv.COLOR_BGR2GRAY);
+
+    let lCorners = new cv.Mat(),
+      rCorners = new cv.Mat();
+    let lFound = cv.findChessboardCorners(
+        lGray,
+        new cv.Size(rows, cols),
+        lCorners
+      ),
+      rFound = cv.findChessboardCorners(
+        rGray,
+        new cv.Size(rows, cols),
+        rCorners
+      );
+
+    console.log(lFound);
+    console.log(rFound);
+  });
 }
 
 /**
@@ -243,9 +287,11 @@ function _doStereoVis(stereoCamDomEl, leftOut, rightOut) {
   const leftEye = flipped.roi(new cv.Rect(0, 0, w / 2, h));
   const rightEye = flipped.roi(new cv.Rect(w / 2, 0, w / 2, h));
 
+  let del = true;
   if (calibrationMode && captureCalibPair) {
     capturedCalibPairs.push({ l: leftEye, r: rightEye });
     captureCalibPair = false;
+    del = false;
     console.log(capturedCalibPairs);
   }
 
@@ -254,8 +300,10 @@ function _doStereoVis(stereoCamDomEl, leftOut, rightOut) {
 
   orig.delete();
   flipped.delete();
-  leftEye.delete();
-  rightEye.delete();
+  if (del) {
+    leftEye.delete();
+    rightEye.delete();
+  }
 }
 
 /**
