@@ -1,8 +1,7 @@
 import * as THREE from 'three';
-import cv from '@techstark/opencv-js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-// import { TransformControls } from "three/examples/jsm/controls/TransformControls";
 
+import { Mat } from 'mirada';
 import { ref } from 'vue';
 
 /**
@@ -14,8 +13,8 @@ import { ref } from 'vue';
 /**
  * @typedef StereoImagePair
  * @type {object}
- * @prop {cv.Mat} l - left eye image
- * @prop {cv.Mat} r - right eye image
+ * @prop {Mat} l - left eye image
+ * @prop {Mat} r - right eye image
  */
 
 const HIGHLIGHT_COLOR = 0xff0000,
@@ -157,10 +156,6 @@ function doStereoCalibration() {
       prefabbedPoints.data32F[i * cols * dims + j * dims + 1] = i;
     }
   }
-  console.log(cv.findChessboardCorners);
-  console.log(cv.getVersionRevision);
-  console.log(cv.getVersionMajor);
-  console.log(cv.stereoCalibrate);
 
   capturedCalibPairs.forEach((pair) => {
     let { l, r } = pair,
@@ -473,20 +468,17 @@ function attachAndRender(el, stereoEl, leftOut, rightOut, cvReady) {
     f = window.requestAnimationFrame(render, renderer.domElement);
   }
   // call the render loop after a bit because we need the cv lib to actually load
-  function looper() {
-    setTimeout(timeoutCB, 500);
-  }
-  let timeoutCB = () => {
-    try {
-      new cv.Point(1, 2);
+  if (!cv.Mat) {
+    cv.then((val) => {
+      console.log(val);
+      cv = val;
       cvReady();
       render();
-    } catch (err) {
-      console.log(err);
-      looper();
-    }
-  };
-  looper();
+    });
+  } else {
+    cvReady();
+    render();
+  }
 }
 
 export default function useThree() {

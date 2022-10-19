@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.0.0",
-    "@techstark/opencv-js": "^4.6.0-release.1",
     "@tensorflow/tfjs": "^3.21.0",
     "@types/three": "^0.144.0",
+    "mirada": "^0.0.15",
     "pinia": "^2.0.11",
     "quasar": "^2.6.0",
     "three": "^0.145.0",
