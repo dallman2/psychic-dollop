@@ -2,7 +2,9 @@
   <q-page class="row justify-center items-start relative-position">
     <ScrollFixer>
       <template #content>
-        <h1>Boopus Header 🍆</h1>
+        <div class="row justify-center">
+          <h1>Boopus Header 🍆</h1>
+        </div>
       </template>
     </ScrollFixer>
   </q-page>

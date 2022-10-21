@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
-import { Mat, TermCriteria } from 'mirada';
+import { Mat, MatVector, Size, TermCriteria } from 'mirada';
 import { ref } from 'vue';
 
 /**
@@ -15,6 +15,19 @@ import { ref } from 'vue';
  * @type {object}
  * @prop {Mat} l - left eye image
  * @prop {Mat} r - right eye image
+ */
+/**
+ * @typedef MapPair
+ * @type {object}
+ * @prop {Mat} mat1 - x map
+ * @prop {Mat} mat2 - y map
+ */
+/**
+ * @typedef DistMapsAndQ
+ * @type {object}
+ * @prop {MapPair} l - left map pair for undistorting images
+ * @prop {MapPair} r - right map pair for undistorting images
+ * @prop {Mat} q - the Q mat for reprojecting points
  */
 
 const HIGHLIGHT_COLOR = 0xff0000,
@@ -38,6 +51,10 @@ let camera = null,
   captureCalibPair = false,
   /** @type {StereoImagePair[]} list of captured pairs to be used in calibration*/
   capturedCalibPairs = [],
+  /** @type {DistMapsAndQ} an object with the results of stereo calibration */
+  calibResults = null,
+  /** @type {StereoBM} stereo bm object */
+  stereoMatcher = null,
   /** @type {THREE.Raycaster} used for raycasting, the actual raycaster */
   raycaster = new THREE.Raycaster(),
   /** @type {THREE.Vector2} used for raycasting, stores the location of the mouse on the canvas */
@@ -135,6 +152,15 @@ function captureCalibrationPair() {
 }
 
 /**
+ * free memory of all the mats passed in
+ * @param {Mat[]} mats
+ */
+function freeMats(...mats) {
+  // console.log(mats);
+  mats.forEach((el) => el.delete());
+}
+
+/**
  * do a chessboard calibration for each of the stereo cameras.
  * i followed the guide found here pretty closely:
  * https://docs.opencv.org/3.4/dc/dbb/tutorial_py_calibration.html
@@ -143,6 +169,39 @@ function captureCalibrationPair() {
 function doStereoCalibration() {
   // dont do it if there arent pairs
   if (!capturedCalibPairs.length) return;
+
+  /**
+   * Perform vision calibration on one image for one camera,
+   * to avoid having two of every call
+   * @param {Mat} img the image to calibrate on
+   * @param {number} r number of inner rows in the chessboard
+   * @param {number} c number of inner cols in the chessboard
+   * @param {Mat} prePoints grid representing inner corners, use ```prefabbedPoints``` for this
+   * @param {MatVector} objPoints part of parallel array, stores the grid
+   * @param {MatVector} imgPoints other part of parallel array, stores the distorted grid
+   * @param {TermCriteria} crit term critera for finding subpixel corners
+   */
+  function singleImageCalib(img, r, c, prePoints, objPoints, imgPoints, crit) {
+    let gray = new cv.Mat(img.size(), cv.CV_8UC1),
+      corners = new cv.Mat(new cv.Size(r * c, 2), cv.CV_32F);
+    cv.cvtColor(img, gray, cv.COLOR_BGR2GRAY);
+    let found = cv.findChessboardCorners(gray, new cv.Size(r, c), corners);
+    if (found) {
+      objPoints.push_back(prePoints);
+      // get this from img proc
+      cv.cornerSubPix(
+        gray,
+        corners,
+        new cv.Size(5, 5),
+        new cv.Size(-1, -1),
+        crit
+      );
+      imgPoints.push_back(corners);
+      // a drawChessboardCorners hook goes here
+    }
+    freeMats(gray, corners);
+  }
+
   const rows = 7,
     cols = 7,
     dims = 3,
@@ -152,57 +211,21 @@ function doStereoCalibration() {
       0.001
     );
 
-  let imgPointsL = [],
-    imgPointsR = [],
-    objPointsL = [],
-    objPointsR = [];
+  let imgPointsL = new cv.MatVector(),
+    imgPointsR = new cv.MatVector(),
+    objPointsL = new cv.MatVector(),
+    objPointsR = new cv.MatVector();
   /** the prefab matrix which yields the same output as
    * ```
    * objp = np.zeros((6*7,3), np.float32)
    * objp[:,:2] = np.mgrid[0:7,0:6].T.reshape(-1,2)
    * ```
    */
-  const prefabbedPoints = cv.Mat.zeros(
-    new cv.Size(rows * cols, dims),
-    cv.CV_32F
-  );
+  const prefabbedPoints = cv.Mat.zeros(rows * cols, 1, cv.CV_32FC3);
   for (let i = 0; i < rows; i++) {
     for (let j = 0; j < cols; j++) {
       prefabbedPoints.data32F[i * cols * dims + j * dims + 0] = j;
       prefabbedPoints.data32F[i * cols * dims + j * dims + 1] = i;
-    }
-  }
-
-  /**
-   * Perform vision calibration on one image for one camera,
-   * to avoid having two of every call
-   * @param {Mat} img the image to calibrate on
-   * @param {number} r number of inner rows in the chessboard
-   * @param {number} c number of inner cols in the chessboard
-   * @param {Mat} prePoints grid representing inner corners, use ```prefabbedPoints``` for this
-   * @param {Array} objPoints part of parallel array, stores the grid
-   * @param {Array} imgPoints other part of parallel array, stores the distorted grid
-   * @param {TermCriteria} crit term critera for finding subpixel corners
-   */
-  function singleImageCalib(img, r, c, prePoints, objPoints, imgPoints, crit) {
-    let gray = new cv.Mat(),
-      corners = new cv.Mat();
-    cv.cvtColor(img, gray, cv.COLOR_BGR2GRAY);
-    let found = cv.findChessboardCorners(gray, new cv.Size(r, c), corners);
-
-    if (found) {
-      // this is going to be double the length and cause a problem
-      objPoints.push(prePoints);
-      // get this from img proc
-      let betterCorners = cv.cornerSubPix(
-        gray,
-        corners,
-        new cv.Size(11, 11),
-        new cv.Size(-1, -1),
-        crit
-      );
-      imgPoints.push(betterCorners);
-      // a drawChessboardCorners hook goes here
     }
   }
 
@@ -226,29 +249,163 @@ function doStereoCalibration() {
       imgPointsR,
       tc
     );
-    // let camMat = new cv.Mat(new cv.Size(3, 3), cv.CV_32F),
-    // distCoeffs = new cv.Mat(),
-    // rvecs = new cv.Mat(),
-    // tvecs = new cv.Mat(),
-    // stdDevInt = new cv.Mat(),
-    // stdDevExt = new cv.Mat(),
-    // perViewErr = new cv.Mat();
-    let err = cv.stereoCalibrate(
-      objPoints
-      // imgPoints,
-      // gray.size(),
-      // camMat,
-      // distCoeffs,
-      // rvecs,
-      // tvecs,
-      // stdDevInt,
-      // stdDevExt,
-      // perViewErr
-      //flags
-      //tc
-    );
-    console.log(err);
   });
+  let camMatL = new cv.Mat(),
+    distCoeffsL = new cv.Mat(),
+    camMatR = new cv.Mat(),
+    distCoeffsR = new cv.Mat(),
+    rL = new cv.MatVector(),
+    tL = new cv.MatVector(),
+    rR = new cv.MatVector(),
+    tR = new cv.MatVector(),
+    essMat = new cv.Mat(),
+    fundMat = new cv.Mat(),
+    rotL2R = new cv.Mat(),
+    transL2R = new cv.Mat();
+  try {
+    let lCalib = cv.calibrateCamera(
+      objPointsL,
+      imgPointsL,
+      capturedCalibPairs[0].l.size(),
+      camMatL,
+      distCoeffsL,
+      rL,
+      tL
+    );
+    console.log(`left calib err: ${lCalib}`);
+    let newCamMatL = cv.getOptimalNewCameraMatrix(
+      camMatL,
+      distCoeffsL,
+      capturedCalibPairs[0].l.size(),
+      0
+    );
+    let rCalib = cv.calibrateCamera(
+      objPointsR,
+      imgPointsR,
+      capturedCalibPairs[0].l.size(),
+      camMatR,
+      distCoeffsR,
+      rR,
+      tR
+    );
+    console.log(`left calib err: ${rCalib}`);
+    let newCamMatR = cv.getOptimalNewCameraMatrix(
+      camMatR,
+      distCoeffsR,
+      capturedCalibPairs[0].l.size(),
+      0
+    );
+    let e = cv.stereoCalibrate(
+      objPointsL,
+      imgPointsL,
+      imgPointsR,
+      newCamMatL,
+      distCoeffsL,
+      newCamMatR,
+      distCoeffsR,
+      capturedCalibPairs[0].l.size(),
+      rotL2R,
+      transL2R,
+      essMat,
+      fundMat
+    );
+    console.log(`error of stereo calib: ${e}`);
+    let r1 = new cv.Mat(),
+      r2 = new cv.Mat(),
+      p1 = new cv.Mat(),
+      p2 = new cv.Mat(),
+      q = new cv.Mat();
+    cv.stereoRectify(
+      newCamMatL,
+      distCoeffsL,
+      newCamMatR,
+      distCoeffsR,
+      capturedCalibPairs[0].l.size(),
+      rotL2R,
+      transL2R,
+      r1,
+      r2,
+      p1,
+      p2,
+      q
+    );
+    let map1L = new cv.Mat(),
+      map2L = new cv.Mat(),
+      map1R = new cv.Mat(),
+      map2R = new cv.Mat();
+    cv.initUndistortRectifyMap(
+      newCamMatL,
+      distCoeffsL,
+      r1,
+      p1,
+      capturedCalibPairs[0].l.size(),
+      cv.CV_16SC2,
+      map1L,
+      map2L
+    );
+    cv.initUndistortRectifyMap(
+      newCamMatR,
+      distCoeffsR,
+      r2,
+      p2,
+      capturedCalibPairs[0].l.size(),
+      cv.CV_16SC2,
+      map1R,
+      map2R
+    );
+
+    // some mats are trapped in vectors, so push all their refs into a list
+    let matList = [];
+    for (let i = 0; i < objPointsL.size(); i++)
+      matList.push(
+        imgPointsL.get(i),
+        imgPointsR.get(i),
+        objPointsL.get(i),
+        objPointsR.get(i)
+      );
+    freeMats(
+      ...capturedCalibPairs.reduce((prev, cur, idx) =>
+        idx == 1 ? [prev.l, prev.r, cur.l, cur.r] : [...prev, cur.l, cur.r]
+      ), // this unnests the images from the captured img pairs list
+      prefabbedPoints,
+      camMatL,
+      newCamMatL,
+      distCoeffsL,
+      rL,
+      tL,
+      camMatR,
+      newCamMatR,
+      distCoeffsR,
+      rR,
+      tR,
+      essMat,
+      fundMat,
+      rotL2R,
+      transL2R,
+      r1,
+      r2,
+      p1,
+      p2,
+      ...matList, // destructure the stuff from the matvec
+      objPointsL,
+      objPointsR,
+      imgPointsL,
+      imgPointsR
+    );
+    calibResults = {
+      l: {
+        map1: map1L,
+        map2: map2L,
+      },
+      r: {
+        map1: map1R,
+        map2: map2R,
+      },
+      q,
+    };
+  } catch (err) {
+    console.log(err);
+  }
 }
 
 /**
@@ -327,11 +484,16 @@ function _generateProps() {
 
 /**
  * do the thing, ya know?
+ * the block matching/ calib stuff tutorial was found on
+ * https://learnopencv.com/depth-perception-using-stereo-camera-python-c/#block-matching-for-dense-stereo-correspondence
+ * as well as
+ * https://docs.opencv.org/3.4/dc/dbb/tutorial_py_calibration.html
  * @param {HTMLCanvasElement} stereoCamDomEl
  * @param {HTMLCanvasElement} leftOut
  * @param {HTMLCanvasElement} rightOut
+ * @param {HTMLCanvasElement} dispMapEl
  */
-function _doStereoVis(stereoCamDomEl, leftOut, rightOut) {
+function _doStereoVis(stereoCamDomEl, leftOut, rightOut, dispMapEl) {
   let gl = stereoCamDomEl.getContext('webgl2');
   const pixels = new Uint8Array(
       gl.drawingBufferHeight * gl.drawingBufferWidth * 4
@@ -351,6 +513,7 @@ function _doStereoVis(stereoCamDomEl, leftOut, rightOut) {
   const leftEye = flipped.roi(new cv.Rect(0, 0, w / 2, h));
   const rightEye = flipped.roi(new cv.Rect(w / 2, 0, w / 2, h));
 
+  // the user has issued a command to capture a stereo image pair
   let del = true;
   if (calibrationMode && captureCalibPair) {
     capturedCalibPairs.push({ l: leftEye, r: rightEye });
@@ -359,14 +522,60 @@ function _doStereoVis(stereoCamDomEl, leftOut, rightOut) {
     console.log(capturedCalibPairs);
   }
 
-  cv.imshow(leftOut, leftEye);
-  cv.imshow(rightOut, rightEye);
+  // if we have loaded in or found a mapping
+  if (calibResults) {
+    // make sure we have a block matcher
+    if (!stereoMatcher) {
+      stereoMatcher = new cv.StereoBM();
+    }
+    let undistL = new cv.Mat(),
+      undistR = new cv.Mat(),
+      grayL = new cv.Mat(),
+      grayR = new cv.Mat(),
+      dispMap = new cv.Mat(),
+      dispMapConv = new cv.Mat();
+    cv.cvtColor(leftEye, grayL, cv.COLOR_BGR2GRAY);
+    cv.cvtColor(rightEye, grayR, cv.COLOR_BGR2GRAY);
+    cv.remap(
+      grayL,
+      undistL,
+      calibResults.l.map1,
+      calibResults.l.map2,
+      cv.INTER_LANCZOS4,
+      cv.BORDER_CONSTANT
+    );
+    cv.remap(
+      grayR,
+      undistR,
+      calibResults.r.map1,
+      calibResults.r.map2,
+      cv.INTER_LANCZOS4,
+      cv.BORDER_CONSTANT
+    );
+    cv.imshow(leftOut, undistL);
+    cv.imshow(rightOut, undistR);
+    // compute disp
+    stereoMatcher.compute(undistL, undistR, dispMap);
+    // do the conversion
+    dispMap.convertTo(dispMapConv, cv.CV_32F);
 
-  orig.delete();
-  flipped.delete();
+    // cv.divide(dispMapConv, )
+    // fix this shit
+    // dispMapConv = dispMapConv / 16;
+    // dispMapConv = dispMapConv - stereoMatcher.getMinDisparity();
+    // dispMapConv = dispMapConv / stereoMatcher.getNumDisparities();
+
+    cv.imshow(dispMapEl, dispMapConv);
+    // clean up
+    freeMats(undistL, undistR, grayL, grayR, dispMap, dispMapConv);
+  } else {
+    cv.imshow(leftOut, leftEye);
+    cv.imshow(rightOut, rightEye);
+  }
+
+  freeMats(orig, flipped);
   if (del) {
-    leftEye.delete();
-    rightEye.delete();
+    freeMats(leftEye, rightEye);
   }
 }
 
@@ -443,9 +652,10 @@ function addObjToGroup(obj, group, exclude = false) {
  * @param {HTMLCanvasElement} stereoEl
  * @param {HTMLCanvasElement} leftOut
  * @param {HTMLCanvasElement} rightOut
+ * @param {HTMLCanvasElement} dispMapEl
  * @param {ref} cvReady
  */
-function attachAndRender(el, stereoEl, leftOut, rightOut, cvReady) {
+function attachAndRender(el, stereoEl, leftOut, rightOut, dispMapEl, cvReady) {
   resetState();
   // create the camera and set it up
   camera = new THREE.PerspectiveCamera(
@@ -526,7 +736,7 @@ function attachAndRender(el, stereoEl, leftOut, rightOut, cvReady) {
     // every fourth frame, do stereovis
     if (f % 4 == 0) {
       try {
-        _doStereoVis(stereoRenderer.domElement, leftOut, rightOut);
+        _doStereoVis(stereoRenderer.domElement, leftOut, rightOut, dispMapEl);
       } catch (e) {
         console.log('fug');
         console.log(e);

@@ -35,8 +35,8 @@
             ref="threeStereoContainer"
           ></div>
           <div class="row justify-around align-center">
-            <div>Left Eye View</div>
-            <div>Right Eye View</div>
+            <div>Undistorted Left Eye View</div>
+            <div>Undistorted Right Eye View</div>
           </div>
           <div class="row justify-center align-center q-pb-sm">
             <canvas
@@ -50,6 +50,17 @@
               width="640"
               height="360"
               ref="rightEye"
+            />
+          </div>
+          <div class="row justify-around align-center">
+            <div>Disparity Map</div>
+          </div>
+          <div class="row justify-center align-center q-pb-sm">
+            <canvas
+              style="border: solid 1px black"
+              width="640"
+              height="360"
+              ref="dispMap"
             />
           </div>
         </div>
@@ -106,6 +117,7 @@ export default {
       this.$refs['threeStereoContainer'],
       this.$refs['leftEye'],
       this.$refs['rightEye'],
+      this.$refs['dispMap'],
       this.cvReady
     );
   },
