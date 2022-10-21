@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
+// import { Mat, MatVector, Size, TermCriteria } from 'mirada';
 import { Mat, MatVector, Size, TermCriteria } from 'mirada';
-import { ref } from 'vue';
 
 /**
  * @typedef ViewerDimensions
@@ -55,6 +55,8 @@ let camera = null,
   calibResults = null,
   /** @type {StereoBM} stereo bm object */
   stereoMatcher = null,
+  /** @type {ScalarMatMap} this class contains mats filled with scalars */
+  scalarMap = null,
   /** @type {THREE.Raycaster} used for raycasting, the actual raycaster */
   raycaster = new THREE.Raycaster(),
   /** @type {THREE.Vector2} used for raycasting, stores the location of the mouse on the canvas */
@@ -67,8 +69,8 @@ let camera = null,
   raycastExcludeList = [],
   /** @type {object.<string, THREE.Object3D>} a map representing all renderable objects currently in the world */
   worldMap = {
+    calib: {},
     prod: {},
-    default: {},
   },
   /** @type {number} frame counter */
   f = 0;
@@ -87,6 +89,9 @@ function resetState() {
   calibrationMode = false;
   captureCalibPair = false;
   capturedCalibPairs = [];
+  calibResults = null;
+  stereoMatcher = null;
+  scalarMap = new ScalarMatMap();
   raycaster = new THREE.Raycaster();
   pointer = new THREE.Vector2();
   intersectedObj = null;
@@ -122,6 +127,44 @@ class Timer {
   finish() {
     this.end = performance.now();
     console.log(`Timer: ${this.label} took ${this.end - this.begin}ms`);
+  }
+}
+
+class ScalarMatMap {
+  constructor() {
+    this.matMap = {};
+  }
+  /**
+   * this is a private method, please call getMat instead
+   * @param {string} key
+   * @param {number} rows
+   * @param {number} cols
+   * @param {number} val
+   * @param {number} t
+   * @returns {Mat}
+   */
+  _addMat(key, rows, cols, val, t) {
+    this.matMap[key] = cv.matFromArray(
+      rows,
+      cols,
+      t,
+      new Array(rows * cols).fill(val)
+    );
+    return this.matMap[key];
+  }
+  /**
+   * use this to generate/ retreive a Mat filled with a scalar value
+   * useful for add, sub, mul, div
+   * @param {Size} size - number of cols in the mat
+   * @param {number} val - value of each el in the mat
+   * @param {number} t - type of the mat
+   * @returns {Mat}
+   */
+  getMat(size, val, t) {
+    let key = `${size.height}_${size.width}_${val}_${t}`;
+    return this.matMap[key]
+      ? this.matMap[key]
+      : this._addMat(key, size.height, size.width, val, t);
   }
 }
 
@@ -164,7 +207,6 @@ function freeMats(...mats) {
  * do a chessboard calibration for each of the stereo cameras.
  * i followed the guide found here pretty closely:
  * https://docs.opencv.org/3.4/dc/dbb/tutorial_py_calibration.html
- * @returns
  */
 function doStereoCalibration() {
   // dont do it if there arent pairs
@@ -409,80 +451,6 @@ function doStereoCalibration() {
 }
 
 /**
- * create the scene for calibration
- * @param {number} rows rows in the chessboard
- * @param {number} cols cols in the chessboard
- * @return {obj<string, array>} an object with two keys, ```inc``` and ```exc```, refering to objects to include and exclude
- */
-function _prepareCalibrationScene(rows, cols) {
-  const ambLight = new THREE.AmbientLight(0xffffff, 0.5),
-    geometry = new THREE.PlaneGeometry(1, 1),
-    blackMaterial = new THREE.MeshBasicMaterial({
-      color: 0x000000,
-      side: THREE.DoubleSide,
-    }),
-    whiteMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      side: THREE.DoubleSide,
-    });
-
-  let squares = [];
-  for (let i = 0; i < cols; i++) {
-    for (let j = 0; j < rows; j++) {
-      // every other square should be white
-      let square;
-      if ((i % 2 && j % 2) || (!(i % 2) && !(j % 2)))
-        square = new THREE.Mesh(geometry, blackMaterial);
-      else square = new THREE.Mesh(geometry, whiteMaterial);
-      square.position.set(i - cols / 2, j - rows / 2, 0);
-      squares.push(square);
-    }
-  }
-
-  return {
-    calibInc: [...squares],
-    calibExc: [ambLight],
-  };
-}
-
-/**
- * @return {obj<string, array>} an object with two keys, ```inc``` and ```exc```, refering to objects to include and exclude
- */
-function _generateProps() {
-  const ambLight = new THREE.AmbientLight(0xffffff, 0.3),
-    lightGroup = new THREE.Group(),
-    light1 = new THREE.PointLight(0xffffff, 0.8),
-    helper = new THREE.Box3Helper(
-      new THREE.Box3(origin, new THREE.Vector3(2, 2, 2)),
-      0x000000
-    ),
-    gridHelper = new THREE.GridHelper(10, 10, 0x00ffff, 0xff00ff),
-    geometry = new THREE.BoxBufferGeometry(1, 1, 1);
-
-  helper.position.set(origin);
-  light1.position.set(1, 1, 1);
-  addObjToGroup([helper, light1], lightGroup, true);
-  lightGroup.position.set(10, 75, 10);
-  gridHelper.position.set(0, -10, 0);
-
-  const cubes = [
-    0x00ff00, 0x44ff00, 0x00ff88, 0x88ff00, 0x00ffcc, 0xccff00, 0x00ffee,
-  ].map((c, idx) => {
-    const cube = new THREE.Mesh(
-      geometry,
-      new THREE.MeshLambertMaterial({ color: c })
-    );
-    cube.position.set(idx * 2, 0, idx);
-    return cube;
-  });
-
-  return {
-    inc: [...cubes],
-    exc: [gridHelper, ambLight, lightGroup],
-  };
-}
-
-/**
  * do the thing, ya know?
  * the block matching/ calib stuff tutorial was found on
  * https://learnopencv.com/depth-perception-using-stereo-camera-python-c/#block-matching-for-dense-stereo-correspondence
@@ -558,12 +526,32 @@ function _doStereoVis(stereoCamDomEl, leftOut, rightOut, dispMapEl) {
     stereoMatcher.compute(undistL, undistR, dispMap);
     // do the conversion
     dispMap.convertTo(dispMapConv, cv.CV_32F);
-
-    // cv.divide(dispMapConv, )
-    // fix this shit
     // dispMapConv = dispMapConv / 16;
+    cv.divide(
+      dispMapConv,
+      scalarMap.getMat(leftEye.size(), 16, cv.CV_32F),
+      dispMapConv
+    );
     // dispMapConv = dispMapConv - stereoMatcher.getMinDisparity();
+    cv.subtract(
+      dispMapConv,
+      scalarMap.getMat(
+        leftEye.size(),
+        stereoMatcher.getMinDisparity(),
+        cv.CV_32F
+      ),
+      dispMapConv
+    );
     // dispMapConv = dispMapConv / stereoMatcher.getNumDisparities();
+    cv.divide(
+      dispMapConv,
+      scalarMap.getMat(
+        leftEye.size(),
+        stereoMatcher.getNumDisparities(),
+        cv.CV_32F
+      ),
+      dispMapConv
+    );
 
     cv.imshow(dispMapEl, dispMapConv);
     // clean up
@@ -615,6 +603,80 @@ function checkIntersections() {
     }
     intersectedObj = null;
   }
+}
+
+/**
+ * create the scene for calibration
+ * @param {number} rows rows in the chessboard
+ * @param {number} cols cols in the chessboard
+ * @return {obj<string, array>} an object with two keys, ```inc``` and ```exc```, refering to objects to include and exclude
+ */
+function _prepareCalibrationScene(rows, cols) {
+  const ambLight = new THREE.AmbientLight(0xffffff, 0.5),
+    geometry = new THREE.PlaneGeometry(1, 1),
+    blackMaterial = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      side: THREE.DoubleSide,
+    }),
+    whiteMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+    });
+
+  let squares = [];
+  for (let i = 0; i < cols; i++) {
+    for (let j = 0; j < rows; j++) {
+      // every other square should be white
+      let square;
+      if ((i % 2 && j % 2) || (!(i % 2) && !(j % 2)))
+        square = new THREE.Mesh(geometry, blackMaterial);
+      else square = new THREE.Mesh(geometry, whiteMaterial);
+      square.position.set(i - cols / 2, j - rows / 2, 0);
+      squares.push(square);
+    }
+  }
+
+  return {
+    calibInc: [...squares],
+    calibExc: [ambLight],
+  };
+}
+
+/**
+ * @return {obj<string, array>} an object with two keys, ```inc``` and ```exc```, refering to objects to include and exclude
+ */
+function _generateProps() {
+  const ambLight = new THREE.AmbientLight(0xffffff, 0.3),
+    lightGroup = new THREE.Group(),
+    light1 = new THREE.PointLight(0xffffff, 0.8),
+    helper = new THREE.Box3Helper(
+      new THREE.Box3(origin, new THREE.Vector3(2, 2, 2)),
+      0x000000
+    ),
+    gridHelper = new THREE.GridHelper(10, 10, 0x00ffff, 0xff00ff),
+    geometry = new THREE.BoxBufferGeometry(1, 1, 1);
+
+  helper.position.set(origin);
+  light1.position.set(1, 1, 1);
+  addObjToGroup([helper, light1], lightGroup, true);
+  lightGroup.position.set(10, 75, 10);
+  gridHelper.position.set(0, -10, 0);
+
+  const cubes = [
+    0x00ff00, 0x44ff00, 0x00ff88, 0x88ff00, 0x00ffcc, 0xccff00, 0x00ffee,
+  ].map((c, idx) => {
+    const cube = new THREE.Mesh(
+      geometry,
+      new THREE.MeshLambertMaterial({ color: c })
+    );
+    cube.position.set(idx * 2, 0, idx);
+    return cube;
+  });
+
+  return {
+    inc: [...cubes],
+    exc: [gridHelper, ambLight, lightGroup],
+  };
 }
 
 /**
