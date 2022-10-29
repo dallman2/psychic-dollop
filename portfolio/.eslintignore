@@ -6,3 +6,4 @@
 .eslintrc.js
 /src-ssr
 /src/js/opencv.js
+/src/js/opencv_js.js
