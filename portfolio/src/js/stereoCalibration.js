@@ -1,5 +1,5 @@
-import {Mat, MatVector, TermCriteria} from 'mirada'
-import stateAPI from 'src/js/gfxState';
+import { Mat, MatVector, TermCriteria } from 'mirada';
+import { init, getAPI } from 'src/js/gfxState';
 
 let {
   HIGHLIGHT_COLOR,
@@ -13,6 +13,7 @@ let {
   captureCalibPair,
   capturedCalibPairs,
   calibResults,
+  haveCalibResults,
   stereoMatcher,
   scalarMap,
   raycaster,
@@ -24,14 +25,15 @@ let {
   f,
   resetState,
   freeMats,
-} = stateAPI;
+} = getAPI();
 
 /**
  * do a chessboard calibration for each of the stereo cameras.
  * i followed the guide found here pretty closely:
  * https://docs.opencv.org/3.4/dc/dbb/tutorial_py_calibration.html
  */
- function doStereoCalibration() {
+function doStereoCalibration() {
+  console.log('calibrating');
   // dont do it if there arent pairs
   if (!capturedCalibPairs.length) return;
 
@@ -219,6 +221,17 @@ let {
       map2R
     );
 
+    calibResults['l'] = {
+      map1: map1L,
+      map2: map2L,
+    };
+    calibResults['r'] = {
+      map1: map1R,
+      map2: map2R,
+    };
+    calibResults['q'] = q;
+    haveCalibResults.value = true;
+
     // some mats are trapped in vectors, so push all their refs into a list
     let matList = [];
     for (let i = 0; i < objPointsL.size(); i++)
@@ -257,22 +270,9 @@ let {
       imgPointsL,
       imgPointsR
     );
-    calibResults = {
-      l: {
-        map1: map1L,
-        map2: map2L,
-      },
-      r: {
-        map1: map1R,
-        map2: map2R,
-      },
-      q,
-    };
   } catch (err) {
     console.log(err);
   }
 }
 
-export {
-  doStereoCalibration
-}
+export { doStereoCalibration };

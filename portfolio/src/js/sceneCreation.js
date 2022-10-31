@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import stateAPI from 'src/js/gfxState';
+import { init, getAPI } from 'src/js/gfxState';
 
 let {
   HIGHLIGHT_COLOR,
@@ -13,6 +13,7 @@ let {
   captureCalibPair,
   capturedCalibPairs,
   calibResults,
+  haveCalibResults,
   stereoMatcher,
   scalarMap,
   raycaster,
@@ -24,7 +25,7 @@ let {
   f,
   resetState,
   freeMats,
-} = stateAPI;
+} = getAPI();
 /**
  * create the scene for calibration
  * @param {number} rows rows in the chessboard
@@ -129,12 +130,6 @@ function addObjToCollection(objMap, collection, sceneKey) {
    * @param {THREE.Object3D} el
    */
   let pusher = (el) => {
-    scene.name = 'hello'
-    f = 100
-    console.log(el)
-    console.log(scene)
-    console.log(calibrationScene)
-    console.log(sceneKey)
     worldMap[sceneKey][el.uuid] = el;
     collection.add(el);
   };

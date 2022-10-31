@@ -5,8 +5,9 @@ import { doStereoCalibration } from 'src/js/stereoCalibration';
 import { doStereoVis } from 'src/js/stereoVision';
 import { prepareCalibrationScene, generateProps } from 'src/js/sceneCreation';
 import opencv from 'src/js/opencv_js.js';
-import stateAPI from 'src/js/gfxState';
+import { init, getAPI } from 'src/js/gfxState';
 
+console.log('calling getapi');
 let {
   HIGHLIGHT_COLOR,
   origin,
@@ -19,6 +20,7 @@ let {
   captureCalibPair,
   capturedCalibPairs,
   calibResults,
+  haveCalibResults,
   stereoMatcher,
   scalarMap,
   raycaster,
@@ -30,13 +32,13 @@ let {
   f,
   resetState,
   freeMats,
-} = stateAPI;
+} = getAPI();
 
 /**
  * @returns {THREE.Scene} the active scene
  */
 function getScene() {
-  return calibrationMode ? calibrationScene : scene;
+  return calibrationMode.value ? calibrationScene : scene;
 }
 
 /**
@@ -45,8 +47,8 @@ function getScene() {
  * @return {boolean} the new state of calibrationMode
  */
 function toggleCalibrationMode() {
-  calibrationMode = !calibrationMode;
-  return calibrationMode;
+  calibrationMode.value = !calibrationMode.value;
+  return calibrationMode.value;
 }
 
 /**
@@ -54,7 +56,7 @@ function toggleCalibrationMode() {
  * @return {number} the number of image pairs AFTER the next one is captured
  */
 function captureCalibrationPair() {
-  captureCalibPair = true;
+  captureCalibPair.value = true;
   return capturedCalibPairs.length + 1;
 }
 
@@ -96,8 +98,6 @@ function checkIntersections() {
   }
 }
 
-
-
 /**
  * stuff that only has to happen on first load
  * @param {HTMLCanvasElement} el
@@ -116,7 +116,7 @@ function gfxSetup(el, stereoEl) {
   camera.lookAt(origin);
 
   // // create the calibration props for stereo vis
-  prepareCalibrationScene(8, 8)
+  prepareCalibrationScene(8, 8);
   // create some props and add them
   generateProps();
   // create the stereo cam
@@ -192,9 +192,8 @@ function attachAndRender(el, stereoEl, leftOut, rightOut, dispMapEl, cvReady) {
 
     stereoRenderer.setScissorTest(false);
     // ============================================================================
-
     // every fourth frame, do stereovis
-    if (f % 4 == 0) {
+    if (f.value % 4 == 0) {
       try {
         doStereoVis(stereoRenderer.domElement, leftOut, rightOut, dispMapEl);
       } catch (e) {
@@ -204,7 +203,7 @@ function attachAndRender(el, stereoEl, leftOut, rightOut, dispMapEl, cvReady) {
     }
 
     // complete the recursion
-    f = window.requestAnimationFrame(render, renderer.domElement);
+    f.value = window.requestAnimationFrame(render, renderer.domElement);
   }
   // call the render loop as a promise fulfillment because this module is lorg
   opencv().then((val) => {
