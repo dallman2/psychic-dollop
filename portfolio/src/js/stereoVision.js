@@ -1,5 +1,5 @@
 import Timer from 'src/js/Timer';
-import stateAPI from 'src/js/gfxState';
+import { init, getAPI } from 'src/js/gfxState';
 
 let {
   HIGHLIGHT_COLOR,
@@ -13,6 +13,7 @@ let {
   captureCalibPair,
   capturedCalibPairs,
   calibResults,
+  haveCalibResults,
   stereoMatcher,
   scalarMap,
   raycaster,
@@ -24,7 +25,7 @@ let {
   f,
   resetState,
   freeMats,
-} = stateAPI;
+} = getAPI();
 
 /**
  * do the thing, ya know?
@@ -37,7 +38,7 @@ let {
  * @param {HTMLCanvasElement} rightOut
  * @param {HTMLCanvasElement} dispMapEl
  */
- function doStereoVis(stereoCamDomEl, leftOut, rightOut, dispMapEl) {
+function doStereoVis(stereoCamDomEl, leftOut, rightOut, dispMapEl) {
   let gl = stereoCamDomEl.getContext('webgl2');
   const pixels = new Uint8Array(
       gl.drawingBufferHeight * gl.drawingBufferWidth * 4
@@ -59,18 +60,16 @@ let {
 
   // the user has issued a command to capture a stereo image pair
   let del = true;
-  if (calibrationMode && captureCalibPair) {
+  if (calibrationMode.value && captureCalibPair.value) {
     capturedCalibPairs.push({ l: leftEye, r: rightEye });
-    captureCalibPair = false;
+    captureCalibPair.value = false;
     del = false;
-    console.log(capturedCalibPairs);
   }
 
   // if we have loaded in or found a mapping
-  if (calibResults) {
-    // make sure we have a block matcher
-    if (!stereoMatcher) {
-      stereoMatcher = new cv.StereoBM();
+  if (haveCalibResults.value) {
+    if (!stereoMatcher.stereoBM) {
+      stereoMatcher.setBM(new cv.StereoBM());
     }
     let undistL = new cv.Mat(),
       undistR = new cv.Mat(),
@@ -99,7 +98,7 @@ let {
     cv.imshow(leftOut, undistL);
     cv.imshow(rightOut, undistR);
     // compute disp
-    stereoMatcher.compute(undistL, undistR, dispMap);
+    stereoMatcher.stereoBM.compute(undistL, undistR, dispMap);
     // do the conversion
     dispMap.convertTo(dispMapConv, cv.CV_32F);
     // dispMapConv = dispMapConv / 16;
@@ -113,7 +112,7 @@ let {
       dispMapConv,
       scalarMap.getMat(
         leftEye.size(),
-        stereoMatcher.getMinDisparity(),
+        stereoMatcher.stereoBM.getMinDisparity(),
         cv.CV_32F
       ),
       dispMapConv
@@ -123,7 +122,7 @@ let {
       dispMapConv,
       scalarMap.getMat(
         leftEye.size(),
-        stereoMatcher.getNumDisparities(),
+        stereoMatcher.stereoBM.getNumDisparities(),
         cv.CV_32F
       ),
       dispMapConv
@@ -143,6 +142,4 @@ let {
   }
 }
 
-export {
-  doStereoVis
-}
+export { doStereoVis };
