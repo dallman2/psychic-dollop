@@ -2,14 +2,11 @@
   <q-page class="row justify-center items-start">
     <ScrollFixer>
       <template #content>
-        <q-dialog v-model="info">
-          <q-card
-            style="max-height: 75vh; min-width: 70vw"
-            class="row justify-center"
-          >
+        <StoryDialog>
+          <template #board>
             <StoryBoard :wide="wide" />
-          </q-card>
-        </q-dialog>
+          </template>
+        </StoryDialog>
         <div class="row justify-center">
           <TFCont />
         </div>
@@ -20,16 +17,16 @@
 <script>
 import StoryBoard from 'components/StoryBoardTF.vue';
 import ScrollFixer from 'components/ScrollFixer.vue';
+import StoryDialog from 'src/components/StoryDialog.vue';
 import TFCont from 'src/components/TFCont.vue';
 import { useQuasar } from 'quasar';
-import { ref } from 'vue';
 export default {
   setup() {
     let q = useQuasar();
-    let info = ref(true);
-    return { q, info };
+    return { q };
   },
   components: {
+    StoryDialog,
     StoryBoard,
     ScrollFixer,
     TFCont,

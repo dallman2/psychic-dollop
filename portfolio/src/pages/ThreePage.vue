@@ -2,14 +2,11 @@
   <q-page class="column justify-start align-center">
     <ScrollFixer>
       <template #content>
-        <q-dialog v-model="info">
-          <q-card
-            style="max-height: 75vh; min-width: 70vw"
-            class="row justify-center"
-          >
+        <StoryDialog>
+          <template #board>
             <StoryBoard :wide="wide" />
-          </q-card>
-        </q-dialog>
+          </template>
+        </StoryDialog>
         <div v-show="showThree">
           <div class="row justify-center align-center">
             <q-btn
@@ -81,8 +78,9 @@
   </q-page>
 </template>
 <script>
-import ScrollFixer from 'components/ScrollFixer.vue';
 import StoryBoard from 'components/StoryBoardOpenCV.vue';
+import ScrollFixer from 'components/ScrollFixer.vue';
+import StoryDialog from 'src/components/StoryDialog.vue';
 import useThree from 'src/composables/useThree';
 import { useQuasar } from 'quasar';
 import { ref } from 'vue';
@@ -100,8 +98,6 @@ export default {
       calibMode = ref(false),
       capturedPairs = ref(0),
       cvReady = () => (showThree.value = true);
-
-    let info = ref(true);
     return {
       q,
       attachAndRender,
@@ -112,10 +108,10 @@ export default {
       showThree,
       calibMode,
       capturedPairs,
-      info,
     };
   },
   components: {
+    StoryDialog,
     ScrollFixer,
     StoryBoard,
   },
