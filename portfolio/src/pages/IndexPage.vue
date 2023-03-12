@@ -1,5 +1,8 @@
 <template>
-  <q-page class="row justify-center items-start relative-position">
+  <q-page
+    style="background-image: url('src/assets/heroMtn.png')"
+    class="row justify-center items-start relative-position"
+  >
     <ScrollFixer>
       <template #content>
         <div class="row justify-center">
