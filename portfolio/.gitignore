@@ -4,6 +4,9 @@ node_modules
 
 /src/assets/**.jpg
 
+# remeber that this is here please TODO
+/src/assets/**/**.csv
+
 # Quasar core related directories
 .quasar
 /dist

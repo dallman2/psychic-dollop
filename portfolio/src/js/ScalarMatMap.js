@@ -1,4 +1,4 @@
-import {Mat} from 'mirada'
+import { Mat } from 'mirada';
 /**
  *
  * ### Preamble
@@ -19,11 +19,11 @@ import {Mat} from 'mirada'
  * future use.
  *
  * ### So whats the point?
- * The use case here is in the normalization process of the disparit map. We need to use ```16``` as a scalar, so we use this
+ * The use case here is in the normalization process of the disparity map. We need to use ```16``` as a scalar, so we use this
  * class to store a ```mat``` that is the proper size and type for our stereo vision pipeline, filled with the value ```16```. That way,
  * we do not need to laborously create that object in memory every time the pipeline runs.
  */
- export default class ScalarMatMap {
+export default class ScalarMatMap {
   constructor() {
     this.matMap = {};
   }
@@ -48,7 +48,7 @@ import {Mat} from 'mirada'
   /**
    * use this to generate/ retreive a Mat filled with a scalar value
    * useful for add, sub, mul, div
-   * @param {Size} size - number of cols in the mat
+   * @param {Size} size - size object of the mat
    * @param {number} val - value of each el in the mat
    * @param {number} t - type of the mat
    * @returns {Mat}
