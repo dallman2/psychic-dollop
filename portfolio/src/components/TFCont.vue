@@ -18,17 +18,17 @@ export default {
     });
 
     w.onmessage = function (event) {
-      switch(event.data){
+      switch(event.data[0]){
         case codes.TENSOR_LOADED: {
-
+          w.postMessage([codes.GET_SCATTERPLOT_DATA])
         }
         case codes.SCATTERPLOT_DATA_RESP: {
-
+          console.log(event)
         }
       }
     };
     console.log(w);
-    w.postMessage(codes.LOAD_DATA);
+    w.postMessage([codes.LOAD_DATA]);
 
     // let csvFile = tf.data.csv(
     //   'src/assets/processed_games/away/201209050nyg.csv',
