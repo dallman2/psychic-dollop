@@ -3,6 +3,7 @@ from functools import partial
 import os
 import csv
 import json
+import time
 from bs4 import BeautifulSoup
 import bs4.element as bs4_elements
 
@@ -26,7 +27,7 @@ def gen_codes(year) -> list:
     return refs
 
 
-def pull_games(pull_schedules=False) -> None:
+def pull_games(interval=20, pull_schedules=False) -> None:
     # for each year...
     for year in years:
         if(pull_schedules):
@@ -37,7 +38,9 @@ def pull_games(pull_schedules=False) -> None:
         # generate games from that schedule
         for game_code in gen_codes(year):
             game_command = f'curl https://www.pro-football-reference.com/boxscores/{game_code}.htm -o ./games/{game_code}.html'
+            print(f'pulling {game_command}')
             os.system(game_command)
+            time.sleep(interval)
 
 
 def extract_data_from_html(raw, home: str) -> list:
@@ -229,10 +232,10 @@ def generate_json_data_from_processed_game():
 # TODO
 # uh oh. pfr throttled bot requests... need to build a bot to slowly request
 # https://www.sports-reference.com/bot-traffic.html
-# pull_games()
+pull_games(30)
 
 
-generate_json_data_from_processed_game()
+# generate_json_data_from_processed_game()
 
 # for dir, subdirs, files in os.walk('./games'):
 #     for game_code in files:
