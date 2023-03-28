@@ -152,8 +152,30 @@
         </q-item>
         <q-separator class="full-width text-primary q-my-md" size="2px" />
         <StoryPoint :wide="wide" icon="hub">
-          <template #label> What kind of ML structure do I need? </template>
-          <template #content> Hello </template>
+          <template #label> What kind of learning structure do I need? </template>
+          <template #content> 
+            In football, people often talk about the <i>momentum</i> of a game. For reasons unknown to man,
+            the order in which plays happen in a game matters. To me, that means I need a system that can 
+            understand the <i>sequence</i> in which plays occur. A <b>recurrent neural network</b> should 
+            be able to accomplish this task. 
+          </template>
+        </StoryPoint>
+        <StoryPoint :wide="wide" icon="hub">
+          <template #label> Why an RNN? Are there other options? </template>
+          <template #content> 
+             In theory, any type of network that allows for sequential input should work, but starting with
+             an RNN should give us a good baseline. The RNN should allow us to neatly supply our <i>samples</i> (games)
+             as <i>sequences</i> (plays). The best analogy to the type of learning I want to accomplish is the 
+             <a target="_blank" href="https://github.com/tensorflow/tfjs-examples/tree/master/sentiment">IMDB Sentiment Classification</a> 
+             example project. In that project, the network learns to classify the sentiment of a movie review as either
+             <i>positive</i> or <i>negative</i>. For my purposes, this <b>sentiment</b> maps to <i>winners</i> or <i>losers</i>.
+          </template>
+        </StoryPoint>
+        <StoryPoint :wide="wide" icon="hub">
+          <template #label> How can we embed our data for the network? </template>
+          <template #content> 
+             
+          </template>
         </StoryPoint>
       </q-list>
     </q-tab-panel>
